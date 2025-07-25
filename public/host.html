@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Host Quiz</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <h1>Quiz Host Panel</h1>
+
+  <div id="question-area">
+    <p id="question">Waiting to start...</p>
+    <ul id="answers"></ul>
+    <button id="next-btn">Next Question</button>
+  </div>
+
+  <h2>Players Joined:</h2>
+  <ul id="players-list"></ul>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    const questionEl = document.getElementById('question');
+    const answersEl = document.getElementById('answers');
+    const nextBtn = document.getElementById('next-btn');
+    const playersListEl = document.getElementById('players-list');
+
+    nextBtn.addEventListener('click', () => {
+      socket.emit('next_question');
+    });
+
+    socket.on('player_joined', ({ name }) => {
+      const li = document.createElement('li');
+      li.textContent = name;
+      playersListEl.appendChild(li);
+    });
+
+    socket.on('new_question', (questionObj) => {
+      questionEl.textContent = questionObj.question;
+      answersEl.innerHTML = '';
+      questionObj.choices.forEach(choice => {
+        const li = document.createElement('li');
+        li.textContent = choice;
+        answersEl.appendChild(li);
+      });
+    });
+
+    socket.on('player_answered', ({ name, isCorrect }) => {
+      alert(`${name} answered and was ${isCorrect ? 'correct' : 'wrong'}`);
+    });
+
+    socket.on('player_left', ({ name }) => {
+      // You could update UI here if needed
+    });
+
+    socket.on('game_ended', () => {
+      questionEl.textContent = 'Game Over!';
+      answersEl.innerHTML = '';
+    });
+  </script>
+</body>
+</html>

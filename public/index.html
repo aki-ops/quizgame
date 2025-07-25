@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Tun Quiz Game</title>
+    <link rel="stylesheet" href="style.css" />
+    <link href="https://fonts.googleapis.com/css?family=Montserrat:700,900&display=swap" rel="stylesheet" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  </head>
+  <body>
+    <div class="container">
+      <h1 class="main-title">Tun Quiz Game</h1>
+      <div class="lobby-panel">
+        <input type="text" id="name-input" placeholder="Nhập tên của bạn..." />
+        <button id="join-btn">Tham gia</button>
+        <div id="lobby-count" class="lobby-count"></div>
+      </div>
+      <div id="admin-panel" class="admin-panel" style="display:none"></div>
+      <div id="question-section" class="question-section" style="display: none">
+        <div class="question-header">
+          <div id="countdown" class="countdown"></div>
+          <p id="question" class="question"></p>
+        </div>
+        <ul id="answers" class="answers"></ul>
+      </div>
+      <p id="result" class="result"></p>
+      <div class="leaderboard-section">
+        <h2>Bảng xếp hạng</h2>
+        <ul id="leaderboard" class="leaderboard"></ul>
+      </div>
+    </div>
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+      const socket = io();
+      const joinBtn = document.getElementById('join-btn');
+      const nameInput = document.getElementById('name-input');
+      const questionSection = document.getElementById('question-section');
+      const questionEl = document.getElementById('question');
+      const answersEl = document.getElementById('answers');
+      const resultEl = document.getElementById('result');
+      const adminPanel = document.getElementById('admin-panel');
+      const leaderboardEl = document.getElementById('leaderboard');
+      const countdownEl = document.getElementById('countdown');
+      let isAdmin = false;
+
+      joinBtn.addEventListener('click', () => {
+        const name = nameInput.value.trim();
+        if (name) {
+          socket.emit('join_game', { name });
+          joinBtn.disabled = true;
+          nameInput.disabled = true;
+        }
+      });
+
+      socket.on('admin_granted', () => {
+        isAdmin = true;
+        resultEl.textContent = 'Bạn là admin!';
+        questionSection.style.display = 'none';
+        adminPanel.style.display = 'flex';
+        adminPanel.innerHTML = `
+          <button id="start-btn" class="admin-btn">Bắt đầu game</button>
+          <button id="reset-btn" class="admin-btn">Reset game</button>
+        `;
+        document.getElementById('start-btn').onclick = () => {
+          socket.emit('start_game');
+          // Khi admin bắt đầu game, ẩn admin panel, chỉ hiện bảng xếp hạng
+          adminPanel.style.display = 'none';
+          leaderboardEl.style.display = 'block';
+        };
+        document.getElementById('reset-btn').onclick = () => {
+          socket.emit('reset_game');
+        };
+      });
+
+      socket.on('new_question', (questionObj) => {
+        resultEl.textContent = '';
+        questionSection.style.display = isAdmin ? 'none' : 'flex';
+        if (isAdmin) {
+          // Khi admin bắt đầu game, chỉ hiện bảng xếp hạng, ẩn admin panel
+          adminPanel.style.display = 'none';
+          leaderboardEl.style.display = 'block';
+        }
+        questionEl.textContent = questionObj.question;
+        answersEl.innerHTML = '';
+        if (!isAdmin) {
+          leaderboardEl.style.display = 'none';
+        }
+        (questionObj.options || questionObj.choices || []).forEach((choice) => {
+          const li = document.createElement('li');
+          li.textContent = choice;
+          li.className = 'answer-btn';
+          li.addEventListener('click', () => {
+            socket.emit('answer_question', {
+              questionId: questionObj.id,
+              answer: choice,
+              playerName: nameInput.value.trim(),
+            });
+          });
+          answersEl.appendChild(li);
+        });
+      });
+
+      socket.on('leaderboard_update', (data) => {
+        if (isAdmin && Array.isArray(data)) {
+          leaderboardEl.innerHTML = '';
+          leaderboardEl.style.display = 'block';
+          data.forEach((player, i) => {
+            const li = document.createElement('li');
+            li.textContent = `${i + 1}. ${player.name} - ${player.score} điểm`;
+            leaderboardEl.appendChild(li);
+          });
+          if (data.length === 0) {
+            const li = document.createElement('li');
+            li.textContent = 'Chưa có người chơi nào!';
+            leaderboardEl.appendChild(li);
+          }
+        } else {
+          leaderboardEl.innerHTML = '';
+          leaderboardEl.style.display = 'none';
+        }
+      });
+
+      socket.on('game_over', (leaderboard) => {
+        questionSection.style.display = 'none';
+        resultEl.textContent = '';
+        const lobbyCount = document.getElementById('lobby-count');
+        if (lobbyCount) lobbyCount.style.display = 'none';
+        adminPanel.style.display = 'none';
+        countdownEl.style.display = 'none';
+        leaderboardEl.innerHTML = '';
+        leaderboardEl.style.display = 'block';
+        if (Array.isArray(leaderboard)) {
+          leaderboard.forEach((player, i) => {
+            const li = document.createElement('li');
+            li.textContent = `${i + 1}. ${player.name} - ${player.score} điểm`;
+            if (player.name === nameInput.value.trim()) {
+              li.style.fontWeight = 'bold';
+              li.style.color = '#fc5c7d';
+            }
+            leaderboardEl.appendChild(li);
+          });
+        }
+      });
+
+      socket.on('answer_result', ({ isCorrect }) => {
+        resultEl.textContent = isCorrect ? 'Chính xác!' : 'Sai rồi!';
+      });
+
+      socket.on('game_ended', () => {
+        questionSection.style.display = 'none';
+        resultEl.textContent = 'Game Over!';
+      });
+
+      socket.on('player_joined', ({ name }) => {
+        if (name === nameInput.value.trim()) {
+          resultEl.textContent = 'Bạn đã tham gia thành công!';
+        }
+      });
+
+      socket.on('lobby_players', (players) => {
+        let lobbyCount = document.getElementById('lobby-count');
+        if (!lobbyCount) {
+          lobbyCount = document.createElement('div');
+          lobbyCount.id = 'lobby-count';
+          lobbyCount.className = 'lobby-count';
+          document.querySelector('.lobby-panel').appendChild(lobbyCount);
+        }
+        lobbyCount.textContent = `Số người tham gia: ${players.length}`;
+      });
+
+      answersEl.addEventListener('click', (e) => {
+        if (e.target.tagName === 'LI') {
+          resultEl.textContent = `Bạn đã chọn: ${e.target.textContent}`;
+        }
+      });
+
+      socket.on('countdown', (value) => {
+        countdownEl.style.display = value > 0 ? 'block' : 'none';
+        countdownEl.textContent = value > 0 ? `⏳ Thời gian còn lại: ${value}s` : '';
+      });
+    </script>
+  </body>
+</html>
